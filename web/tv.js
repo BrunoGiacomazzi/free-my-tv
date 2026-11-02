@@ -283,6 +283,11 @@ var TV = (function () {
 
   function samsungApp(a) {
     var icon = a.iconPath || '';
+    // The Home watcher's status API only answers to a store app's own numeric id (3201907018807), in the last part
+    // of its (unmangled) iconPath here, never to the Tizen id (org.tizen.netflix-app) this page uses: catalogId
+    // carries it along for TV.apps's caller to pass on (watcherTell's /apps). An app without one (Developer Mode:
+    // Nuvio, Free My TV itself) keeps its own id, which that API already answers to.
+    var catalogId = (/\/apps_icon\/all\/(\d+)\//.exec(icon) || [])[1] || '';
     if (icon && icon.indexOf('://') < 0) icon = 'file://' + icon;
     var title = SAMSUNG_TITLES[a.id] || a.name || a.id;
     // Older Smart Hubs (a 2015 JU6075) still list Amazon's app under its old name, with another id.
@@ -292,7 +297,7 @@ var TV = (function () {
     if (SAMSUNG_ICONS[a.id] || byName) icon = SAMSUNG_ICONS[a.id] || byName;
     var dial = key === 'netflix' ? 'Netflix' : key === 'youtube' ? 'YouTube' : /^(amazon)?primevideo$/.test(key) ? 'Amazon' : '';
     if (dial) samsungDial[a.id] = dial;
-    return {id: a.id, title: title, icon: icon, color: ''};
+    return {id: a.id, title: title, icon: icon, color: '', catalogId: catalogId};
   }
 
   /**
@@ -597,7 +602,10 @@ var TV = (function () {
     apps: function (done) {
       if (samsung) {
         samsungApps(function (list) {
-          watcherTell('/apps?ids=' + list.map(function (a) { return encodeURIComponent(a.id); }).join(','));
+          var catalog = [];
+          for (var i = 0; i < list.length; i++) if (list[i].catalogId) catalog.push(list[i].id + ':' + list[i].catalogId);
+          watcherTell('/apps?ids=' + list.map(function (a) { return encodeURIComponent(a.id); }).join(',') +
+            '&catalog=' + encodeURIComponent(catalog.join(',')));
           done(list);
         });
         return;

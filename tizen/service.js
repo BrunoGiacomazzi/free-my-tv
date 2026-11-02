@@ -22,14 +22,13 @@ var SCAN = 5000;           // every app is checked this often
 var BOOT_DELAY = 3000;
 var BOOT_UPTIME = 120;     // seconds: a start later than this is the service restarting, not the TV
 var MIN_GAP = 2000;        // never two launches closer than this
-var CATALOG_REFRESH = 600000;   // an app installed or updated meanwhile joins the catalog within this long
 
 var state = {
   watched: null, seen: false, ran: false, watchAt: 0, hiddenSince: 0, watchedHiddenSince: 0, stoppedSince: 0,
   selfVisible: null, apps: [VIEWER], running: {}, scanAt: 0, leaving: false, frame: null,
   lastLaunch: 0, launches: 0, last: ''
 };
-var server = null, interval = null, retry = null, bootTimer = null, catalogTimer = null, busy = false, stopped = false, epoch = 0;
+var server = null, interval = null, retry = null, bootTimer = null, busy = false, stopped = false, epoch = 0;
 
 function get(path, done) {
   var settled = false, req = null;
@@ -61,26 +60,12 @@ function get(path, done) {
 
 /**
  * The TV's status API (127.0.0.1:8001) doesn't know a store app's Tizen id (org.tizen.netflix-app): it only answers
- * to the store's own numeric id (3201907018807), which Free My TV never sees. Both ids are in tizen.application's
- * own app list, though: the numeric one is the last part of each app's iconPath
- * (.../apps_icon/all/3201907018807/...). catalog maps the Tizen id to that numeric one, for every app that has
- * both; an app without a numbered icon path (the dev-mode ones: Nuvio, Free My TV itself) keeps its own id, which
- * the status API already answers to.
+ * to the store's own numeric id (3201907018807), which Free My TV never sees. The home screen reads both, from the
+ * same tizen.application.getAppsInfo it already uses for the shelf's icons (the numeric one is the last part of an
+ * app's iconPath), and sends the pairing along with /apps. An app without one (the dev-mode ones: Nuvio, Free My TV
+ * itself) keeps its own id here, which the status API already answers to.
  */
 var catalog = {};
-
-function refreshCatalog() {
-  try {
-    tizen.application.getAppsInfo(function (list) {
-      var found = {};
-      for (var i = 0; i < list.length; i++) {
-        var m = /\/apps_icon\/all\/(\d+)\//.exec(list[i].iconPath || '');
-        if (m) found[list[i].id] = m[1];
-      }
-      catalog = found;
-    }, function () {}, null);
-  } catch (e) { /* no change: keep the catalog from the last successful read */ }
-}
 
 /** {running, visible} for one app, or null when the TV doesn't say. */
 function appStatus(id, done) {
@@ -216,8 +201,6 @@ function discover() {
     var flag = device.FrameTVSupport;
     state.frame = flag === true || flag === 'true';
     if (state.frame) { state.last = 'Frame TV: watcher off'; return; }
-    refreshCatalog();
-    catalogTimer = setInterval(refreshCatalog, CATALOG_REFRESH);
     interval = setInterval(tick, TICK);
     var uptime = 0;
     try { uptime = require('os').uptime(); } catch (e) { uptime = 0; }
@@ -238,7 +221,12 @@ function request(req, res) {
     if (ids.indexOf(VIEWER) < 0) ids.push(VIEWER);
     state.apps = ids;
     state.scanAt = 0;
-    refreshCatalog();   // a good moment to catch anything installed since the last read
+    var found = {};
+    (typeof query.catalog === 'string' ? query.catalog : '').split(',').forEach(function (pair) {
+      var at = pair.indexOf(':');
+      if (at > 0 && /^\d+$/.test(pair.slice(at + 1))) found[pair.slice(0, at)] = pair.slice(at + 1);
+    });
+    catalog = found;
   } else if (parsed.pathname === '/leave') {
     state.leaving = true;
     forget();
@@ -262,7 +250,6 @@ module.exports.onRequest = function () {};
 module.exports.onExit = function () {
   stopped = true;
   clearInterval(interval);
-  clearInterval(catalogTimer);
   clearTimeout(retry);
   clearTimeout(bootTimer);
   if (server) { server.close(); server = null; }
