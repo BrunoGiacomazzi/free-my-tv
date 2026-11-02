@@ -817,6 +817,10 @@
     rows.push({label: tr('Shelf'), value: '›', shelf: true, step: function (d) { if (d >= 0) openShelfEdit(); }});
     rows.push({label: tr('About this TV'), value: '›', about: true, step: function (d) { if (d >= 0) openAbout(); }});
     if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }});
+    // With the Home watcher, Samsung Home brings Free My TV back: this opens it and leaves it there.
+    if (TV.homeWatcher) rows.push({label: 'Samsung Home', value: '›', step: function (d) {
+      if (d >= 0) TV.samsungHome(function (ok) { if (!ok) toast(trf("Couldn't open {app}.", {app: 'Samsung Home'})); });
+    }});
     return rows;
   }
 

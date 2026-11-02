@@ -6,6 +6,7 @@
     python3 tizen/build.py --preview       # also leaves the files in out/tizen/ to open index.html in a browser
     python3 tizen/build.py --config other.properties
     python3 tizen/build.py --generic       # without config.properties: the TV's time zone picks the city (releases)
+    python3 tizen/build.py --home-watcher  # with tizen/service.js: opens at power-on and comes back over Samsung Home
 
 The same home screen as on LG (web/), with tizen/config.xml and tizen/icon.png, in a zip as Tizen Studio makes it.
 TVs only install signed packages. TizenBrew Installer signs it with the person's Samsung certificate on 2023 and
@@ -60,15 +61,29 @@ def sign(profile):
         sys.exit('The package came back without its signatures.')
 
 
-def build(preview, config, profile):
+# The Home watcher (tizen/service.js), a service the TV starts at power-on. Opt-in: tested on Tizen 9 only.
+WATCHER = '''    <tizen:service id="FreeMyTVio.HomeWatcher" on-boot="true" auto-restart="true">
+        <tizen:content src="service.js"/>
+        <tizen:name>Free My TV Home watcher</tizen:name>
+        <tizen:description>Opens Free My TV at power-on and brings it back over Samsung Home</tizen:description>
+    </tizen:service>
+'''
+
+
+def build(preview, config, profile, watcher):
     with open(os.path.join(ROOT, 'tizen', 'config.xml'), encoding='utf-8') as f:
         manifest = f.read()
+    if watcher:
+        config = dict(config, homeWatcher=True)
+        manifest = manifest.replace('required_version="2.3"', 'required_version="2.4"')
+        manifest = manifest.replace('    <tizen:profile ', WATCHER + '    <tizen:profile ')
     app_id = re.search(r'<tizen:application id="([^"]+)"', manifest).group(1)
     version = re.search(r'<widget [^>]*version="([^"]+)"', manifest).group(1)
     app = webapp.files(config, 'tizen/build.py')
-    for name in ('config.xml', 'icon.png'):
+    for name in ('icon.png',) + (('service.js',) if watcher else ()):
         with open(os.path.join(ROOT, 'tizen', name), 'rb') as f:
             app[name] = f.read()
+    app['config.xml'] = manifest.encode('utf-8')
 
     with zipfile.ZipFile(WGT, 'w', zipfile.ZIP_DEFLATED) as z:
         for path in sorted(app):
@@ -79,8 +94,9 @@ def build(preview, config, profile):
     if preview:
         webapp.preview(app, OUT)
         print('Preview: open out/tizen/index.html (or serve out/tizen) in a browser.')
-    print('Built %s (%s %s, %d KB, %s)' % (os.path.basename(WGT), app_id, version, os.path.getsize(WGT) // 1024,
-                                           'signed with "%s"' % profile if profile else 'not signed'))
+    print('Built %s (%s %s, %d KB, %s%s)' % (os.path.basename(WGT), app_id, version, os.path.getsize(WGT) // 1024,
+                                             'signed with "%s"' % profile if profile else 'not signed',
+                                             ', with the Home watcher' if watcher else ''))
     if not config['tmdbKey']:
         print('No TMDB key built in: the picks come once one is typed on the TV (Home Settings > TMDB key).')
 
@@ -88,4 +104,4 @@ def build(preview, config, profile):
 if __name__ == '__main__':
     args = sys.argv[1:]
     profile = args[args.index('--sign') + 1] if '--sign' in args else None
-    build('--preview' in args, webapp.config_from_args(args), profile)
+    build('--preview' in args, webapp.config_from_args(args), profile, '--home-watcher' in args)

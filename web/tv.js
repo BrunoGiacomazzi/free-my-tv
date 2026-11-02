@@ -513,6 +513,50 @@ var TV = (function () {
     finish();
   }
 
+  // MARK: - Samsung: the Home watcher
+
+  /**
+   * tizen/service.js, in the package when built with tizen/build.py --home-watcher: the TV starts it at power-on, and
+   * it opens Free My TV then, and again when Samsung Home covers it. A hidden page is frozen, so the watching
+   * happens there; this page only tells it what it opens, the TV's apps, and when it's on screen again.
+   */
+  var WATCHER = samsung && window.CONFIG && CONFIG.homeWatcher ? 'http://127.0.0.1:47791' : '';
+
+  function watcherTell(path, done) {
+    if (!WATCHER) { if (done) done(null); return; }
+    var x = new XMLHttpRequest(), over = false;
+    function finish(value) {
+      if (over) return;
+      over = true;
+      if (!value) watcherStart();
+      if (done) done(value);
+    }
+    x.open('GET', WATCHER + path, true);
+    x.timeout = 1500;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var value = null;
+      try { value = x.status === 200 ? JSON.parse(x.responseText) : null; } catch (e) { value = null; }
+      finish(value);
+    };
+    x.ontimeout = x.onerror = function () { finish(null); };
+    x.send();
+  }
+
+  /** Starts the watcher when it isn't answering (the TV stopped it, or it's just installed). */
+  function watcherStart() {
+    try {
+      window.tizen.application.launchAppControl(
+        new window.tizen.ApplicationControl('http://tizen.org/appcontrol/operation/service'),
+        'FreeMyTVio.HomeWatcher', null, function () {});
+    } catch (e) { /* no watcher: Home stays Samsung's */ }
+  }
+
+  if (WATCHER) {
+    watcherTell('/home');
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) watcherTell('/home'); });
+  }
+
   // MARK: - The TV, whichever it is
 
   return {
@@ -525,9 +569,32 @@ var TV = (function () {
      */
     canOpenSettings: !tizen2 && !tizen34,
 
+    /** Built with the Home watcher, which brings Free My TV back over Samsung Home. */
+    homeWatcher: !!WATCHER,
+
+    /** Samsung Home, with the watcher standing aside until Free My TV is on screen again; done(ok). */
+    samsungHome: function (done) {
+      watcherTell('/leave', function (state) {
+        if (!state || state.leaving !== true) { if (done) done(false); return; }
+        try {
+          window.tizen.application.launch('com.samsung.tv.csfs', function () { if (done) done(true); },
+            function () { watcherTell('/home'); if (done) done(false); });
+        } catch (e) {
+          watcherTell('/home');
+          if (done) done(false);
+        }
+      });
+    },
+
     /** Installed apps, as the TV's launcher lists them: [{id, title, icon, color}]. */
     apps: function (done) {
-      if (samsung) { samsungApps(done); return; }
+      if (samsung) {
+        samsungApps(function (list) {
+          watcherTell('/apps?ids=' + list.map(function (a) { return encodeURIComponent(a.id); }).join(','));
+          done(list);
+        });
+        return;
+      }
       if (!webos) {
         done(SAMPLE.map(function (s) { return {id: s[0], title: s[1], icon: '', color: s[2]}; }));
         return;
@@ -570,6 +637,8 @@ var TV = (function () {
     /** Opens an app (or an input); done(ok). */
     launch: function (id, params, done) {
       if (samsung) {
+        // Home pressed in what opens shows Samsung Home: the watcher brings Free My TV back then.
+        watcherTell('/watch?id=' + encodeURIComponent(id.indexOf('source:') === 0 ? 'org.tizen.tv-viewer' : id));
         if (id.indexOf('source:') === 0) samsungSource(id, done);
         else if (params && params.contentTarget) samsungLaunchWith(id, params.contentTarget, done);
         else samsungLaunch(id, done);
