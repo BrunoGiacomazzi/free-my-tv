@@ -354,6 +354,21 @@ var TV = (function () {
   }
 
   /**
+   * Opens an app with a link, as contentTarget in the app control's data (the key webOS apps get it by; Nuvio reads it
+   * there on Samsung too). An app that refuses the request opens as usual, on its Home.
+   */
+  function samsungLaunchWith(id, link, done) {
+    try {
+      var data = [new window.tizen.ApplicationControlData('contentTarget', [link])];
+      var control = new window.tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null, data);
+      window.tizen.application.launchAppControl(control, id, function () { if (done) done(true); },
+        function () { samsungLaunch(id, done); });
+    } catch (e) {
+      samsungLaunch(id, done);
+    }
+  }
+
+  /**
    * The video sources the TV reports ([{type: 'TV' | 'HDMI' | ..., number}]), or null when it doesn't tell. With `all`,
    * the disconnected ones too: Tizen 4 lists an HDMI device on standby as disconnected (even the one on screen), and
    * tvwindow.setSource still switches to it, as Samsung's own source menu does.
@@ -556,6 +571,7 @@ var TV = (function () {
     launch: function (id, params, done) {
       if (samsung) {
         if (id.indexOf('source:') === 0) samsungSource(id, done);
+        else if (params && params.contentTarget) samsungLaunchWith(id, params.contentTarget, done);
         else samsungLaunch(id, done);
         return;
       }
