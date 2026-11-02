@@ -1257,10 +1257,9 @@
 
   // MARK: - Opening things
 
-  /** Nuvio, when the TV has it: picks can open on its page there (Home Settings, Open picks in). LG only for now:
-   *  Samsung's launch passes no data, so Nuvio would open on its Home. */
+  /** Nuvio, when the TV has it: picks can open on its page there (Home Settings, Open picks in). */
   function nuvio() {
-    if (TV.name !== 'webos') return null;
+    if (TV.name !== 'webos' && TV.name !== 'tizen') return null;
     for (var i = 0; i < apps.length; i++) if (/nuvio/i.test(apps[i].id) || /^nuvio\b/i.test(apps[i].title)) return apps[i];
     return null;
   }
@@ -1270,7 +1269,8 @@
     var via = Prefs.openPicks() === 'nuvio' ? nuvio() : null;
     var app = via || Data.appFor(p.app);
     if (!app) return null;
-    // Nuvio's own link for the title, as on Android (nuvio://tmdb/movie/603); webOS apps get links as contentTarget.
+    // Nuvio's own link for the title, as on Android (nuvio://tmdb/movie/603), as contentTarget: webOS hands it over in
+    // the launch params, Samsung in the app control's data (TV.launch).
     return {app: app, params: via ? {contentTarget: 'nuvio://tmdb/' + (p.kind === 'tv' ? 'series' : 'movie') + '/' + p.id} : null};
   }
 
