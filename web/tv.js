@@ -509,23 +509,30 @@ var TV = (function () {
 
   function watcherTell(path, done) {
     if (!WATCHER) { if (done) done(null); return; }
-    var x = new XMLHttpRequest(), over = false;
+    var over = false;
     function finish(value) {
       if (over) return;
       over = true;
       if (!value) watcherStart();
       if (done) done(value);
     }
-    x.open('GET', WATCHER + path, true);
-    x.timeout = 1500;
-    x.onreadystatechange = function () {
-      if (x.readyState !== 4) return;
-      var value = null;
-      try { value = x.status === 200 ? JSON.parse(x.responseText) : null; } catch (e) { value = null; }
-      finish(value);
-    };
-    x.ontimeout = x.onerror = function () { finish(null); };
-    x.send();
+    // Never let the watcher's own call break what asked for it (opening an app): an old WebKit can throw
+    // synchronously here (a blocked scheme, the service not listening yet), not just fail async like onerror.
+    try {
+      var x = new XMLHttpRequest();
+      x.open('GET', WATCHER + path, true);
+      x.timeout = 1500;
+      x.onreadystatechange = function () {
+        if (x.readyState !== 4) return;
+        var value = null;
+        try { value = x.status === 200 ? JSON.parse(x.responseText) : null; } catch (e) { value = null; }
+        finish(value);
+      };
+      x.ontimeout = x.onerror = function () { finish(null); };
+      x.send();
+    } catch (e) {
+      finish(null);
+    }
   }
 
   /** Starts the watcher when it isn't answering (the TV stopped it, or it's just installed). */
